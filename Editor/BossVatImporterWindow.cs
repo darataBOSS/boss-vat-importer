@@ -18,6 +18,7 @@ namespace BossVat.EditorTools
             public int fps; public int frame_count; public int slot_count;
             public Group[] groups; public Palette palette;
             public float[] position_pivot; public float[] position_scale;
+            public float[] object_scale;   // Blender オブジェクトのワールドスケール
             public Textures textures; public string cube_mesh;
         }
 
@@ -161,6 +162,13 @@ namespace BossVat.EditorTools
 
                 // ---- BossVatPlayer 付き GameObject ----
                 var go = new GameObject(baseName + "_VAT");
+                // Blender と同じ大きさになるよう、オブジェクトのワールドスケールを適用
+                // （VAT 位置はローカル座標で焼かれている。Mixamo 等は cm スケールなので重要）。
+                if (meta.object_scale != null && meta.object_scale.Length == 3)
+                {
+                    var os = new Vector3(meta.object_scale[0], meta.object_scale[1], meta.object_scale[2]);
+                    if (os.x != 0 && os.y != 0 && os.z != 0) go.transform.localScale = os;
+                }
                 var player = go.AddComponent<BossVatPlayer>();
                 player.cubeMesh = cubeMesh;
                 player.slotCount = meta.slot_count;
@@ -222,6 +230,9 @@ namespace BossVat.EditorTools
             m.SetTexture("_Palette", palette);
             m.SetVector("_PosPivot", pivot); m.SetVector("_PosScale", scale);
             m.SetVector("_VatParams", new Vector4(slotCount, frameCount, 0.5f / Mathf.Max(1, frameCount), side));
+            // Gamma カラースペースのプロジェクトでは Unity が EXR を pow(1/2.2) で取り込むため、
+            // シェーダー側で逆補正（pow 2.2）する。Linear プロジェクトでは不要。
+            m.SetFloat("_GammaDecode", PlayerSettings.colorSpace == ColorSpace.Gamma ? 1f : 0f);
             string path = AssetDatabase.GenerateUniqueAssetPath(dir + "/" + baseName + "_" + suffix + ".mat");
             AssetDatabase.CreateAsset(m, path);
             return m;

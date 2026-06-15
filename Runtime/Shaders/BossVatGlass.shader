@@ -12,6 +12,7 @@ Shader "BOSS/VatGlass"
         _SlotOffset ("Slot Offset", Float) = 0
         _PosPivot ("Pos Pivot", Vector) = (0,0,0,0)
         _PosScale ("Pos Scale", Vector) = (1,1,1,0)
+        _GammaDecode ("Gamma Decode", Float) = 0
     }
     SubShader
     {
@@ -31,6 +32,7 @@ Shader "BOSS/VatGlass"
             float4 _VatParams;
             float4 _PosPivot, _PosScale;
             float _SlotOffset;
+            float _GammaDecode;
 
             struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; UNITY_VERTEX_INPUT_INSTANCE_ID };
             struct v2f
@@ -54,6 +56,11 @@ Shader "BOSS/VatGlass"
                 float4 s = tex2Dlod(_ScaleVAT, float4(uv,0,0));
                 float4 q = tex2Dlod(_RotVAT, float4(uv,0,0));
                 float palIdx = tex2Dlod(_PalIdxVAT, float4(uv,0,0)).r;
+                if (_GammaDecode > 0.5) {
+                    p.xyz = pow(max(p.xyz, 0.0), 2.2);
+                    s.xyz = pow(max(s.xyz, 0.0), 2.2);
+                    palIdx = pow(max(palIdx, 0.0), 2.2);
+                }
                 float alive = p.a;
                 float3 wpos = p.xyz * _PosScale.xyz + _PosPivot.xyz;
                 float3 scl = s.xyz * alive;
@@ -74,8 +81,10 @@ Shader "BOSS/VatGlass"
                 float3 nrm = normalize(i.wnormal);
                 float3 vd = normalize(i.viewDir);
                 float nl = saturate(dot(nrm, _WorldSpaceLightPos0.xyz));
+                float3 lighting = _LightColor0.rgb * nl + ShadeSH9(float4(nrm, 1.0));
+                lighting = max(lighting, 0.35);
                 float fres = pow(1.0 - saturate(dot(nrm, vd)), 3.0);
-                float3 col = i.albedo * (nl * 0.7 + 0.25) + fres * 0.35;
+                float3 col = i.albedo * lighting + fres * 0.35;
                 return fixed4(col, 1.0);
             }
             ENDCG
