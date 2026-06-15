@@ -77,13 +77,11 @@ Shader "BOSS/VatOpaque"
             fixed4 frag(v2f i) : SV_Target
             {
                 clip(i.alive - 0.5);
+                // アンリット: 焼き込んだ色(albedo)をそのまま表示。シーンのライティングに
+                // 依存しない（Blender の見た目に近い）。立体感のため固定方向の弱いシェードのみ。
                 float3 nrm = normalize(i.wnormal);
-                // シーンの実ライティングを使う（メインの平行光 + 環境光SH）。
-                float nl = saturate(dot(nrm, _WorldSpaceLightPos0.xyz));
-                float3 lighting = _LightColor0.rgb * nl + ShadeSH9(float4(nrm, 1.0));
-                // ライト不在でも見えるよう最低限の下駄
-                lighting = max(lighting, 0.35);
-                float3 col = i.albedo * lighting;
+                float shade = 0.72 + 0.28 * saturate(dot(nrm, normalize(float3(0.3, 0.9, -0.25))));
+                float3 col = i.albedo * shade;
                 return fixed4(col, 1.0);
             }
             ENDCG

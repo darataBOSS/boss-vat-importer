@@ -78,13 +78,12 @@ Shader "BOSS/VatGlass"
             fixed4 frag(v2f i) : SV_Target
             {
                 clip(i.alive - 0.5);
+                // アンリット（焼き込み色）+ fresnel 擬似ガラス。シーンライティング非依存。
                 float3 nrm = normalize(i.wnormal);
                 float3 vd = normalize(i.viewDir);
-                float nl = saturate(dot(nrm, _WorldSpaceLightPos0.xyz));
-                float3 lighting = _LightColor0.rgb * nl + ShadeSH9(float4(nrm, 1.0));
-                lighting = max(lighting, 0.35);
+                float shade = 0.72 + 0.28 * saturate(dot(nrm, normalize(float3(0.3, 0.9, -0.25))));
                 float fres = pow(1.0 - saturate(dot(nrm, vd)), 3.0);
-                float3 col = i.albedo * lighting + fres * 0.35;
+                float3 col = i.albedo * shade + fres * 0.35;
                 return fixed4(col, 1.0);
             }
             ENDCG

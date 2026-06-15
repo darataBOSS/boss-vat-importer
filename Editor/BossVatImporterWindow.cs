@@ -164,11 +164,13 @@ namespace BossVat.EditorTools
                 var go = new GameObject(baseName + "_VAT");
                 // Blender と同じ大きさになるよう、オブジェクトのワールドスケールを適用
                 // （VAT 位置はローカル座標で焼かれている。Mixamo 等は cm スケールなので重要）。
+                Vector3 objScale = Vector3.one;
                 if (meta.object_scale != null && meta.object_scale.Length == 3)
-                {
-                    var os = new Vector3(meta.object_scale[0], meta.object_scale[1], meta.object_scale[2]);
-                    if (os.x != 0 && os.y != 0 && os.z != 0) go.transform.localScale = os;
-                }
+                    objScale = new Vector3(meta.object_scale[0], meta.object_scale[1], meta.object_scale[2]);
+                else
+                    objScale = ParseScaleFromMatrix(File.ReadAllText(metaPath));  // 古い VAT 互換
+                if (objScale.x != 0 && objScale.y != 0 && objScale.z != 0)
+                    go.transform.localScale = objScale;
                 var player = go.AddComponent<BossVatPlayer>();
                 player.cubeMesh = cubeMesh;
                 player.slotCount = meta.slot_count;
@@ -288,6 +290,38 @@ namespace BossVat.EditorTools
         {
             foreach (var c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
             return s.Replace(" ", "_");
+        }
+
+        // 古い VAT 互換: object_scale が無い meta から object_matrix_world の
+        // 3x3 列ベクトル長（=ワールドスケール）を手動抽出する。
+        static Vector3 ParseScaleFromMatrix(string json)
+        {
+            try
+            {
+                int key = json.IndexOf("\"object_matrix_world\"");
+                if (key < 0) return Vector3.one;
+                int open = json.IndexOf('[', key);
+                if (open < 0) return Vector3.one;
+                // 括弧の対応で行列ブロック全体を切り出す
+                int depth = 0, end = open;
+                for (int i = open; i < json.Length; i++)
+                {
+                    if (json[i] == '[') depth++;
+                    else if (json[i] == ']') { depth--; if (depth == 0) { end = i; break; } }
+                }
+                string block = json.Substring(open, end - open + 1);
+                var nums = System.Text.RegularExpressions.Regex.Matches(block, "-?[0-9]*\\.?[0-9]+(?:[eE][-+]?[0-9]+)?");
+                if (nums.Count < 16) return Vector3.one;
+                float[] m = new float[16];
+                for (int i = 0; i < 16; i++) m[i] = float.Parse(nums[i].Value, System.Globalization.CultureInfo.InvariantCulture);
+                // m は行優先 4x4。列 j のスケール = sqrt(m[0][j]^2+m[1][j]^2+m[2][j]^2)
+                float sx = Mathf.Sqrt(m[0]*m[0] + m[4]*m[4] + m[8]*m[8]);
+                float sy = Mathf.Sqrt(m[1]*m[1] + m[5]*m[5] + m[9]*m[9]);
+                float sz = Mathf.Sqrt(m[2]*m[2] + m[6]*m[6] + m[10]*m[10]);
+                if (sx == 0 || sy == 0 || sz == 0) return Vector3.one;
+                return new Vector3(sx, sy, sz);
+            }
+            catch { return Vector3.one; }
         }
     }
 }
