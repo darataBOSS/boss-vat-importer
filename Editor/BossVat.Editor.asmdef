@@ -1,0 +1,7 @@
+{
+  "name": "BossVat.Editor",
+  "references": ["BossVat.Runtime"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "autoReferenced": true
+}

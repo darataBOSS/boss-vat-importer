@@ -1,0 +1,18 @@
+{
+  "name": "com.darataboss.boss-vat-importer",
+  "version": "1.0.0",
+  "displayName": "BOSS VAT Importer",
+  "description": "boss_voxelizer が書き出した instance-VAT フォルダを取り込み、再生プレファブを自動生成する Unity ツール。Built-in パイプライン / GPU インスタンシング。",
+  "unity": "2021.3",
+  "author": {
+    "name": "darataBOSS"
+  },
+  "keywords": [
+    "vat",
+    "voxel",
+    "instancing",
+    "boss_voxelizer",
+    "blender"
+  ],
+  "license": "GPL-3.0-or-later"
+}
