@@ -1,4 +1,5 @@
 // boss_voxelizer — instance-VAT glass（fresnel 擬似・不透明キュー・分岐なし）。
+// 色は color VAT から直接読む。アンリット + fresnel。
 Shader "BOSS/VatGlass"
 {
     Properties
@@ -6,8 +7,7 @@ Shader "BOSS/VatGlass"
         _PosVAT ("Position VAT", 2D) = "black" {}
         _ScaleVAT ("Scale VAT", 2D) = "black" {}
         _RotVAT ("Rotation VAT", 2D) = "black" {}
-        _PalIdxVAT ("Palette Index VAT", 2D) = "black" {}
-        _Palette ("Palette", 2D) = "white" {}
+        _ColorVAT ("Color VAT", 2D) = "white" {}
         _VatParams ("VAT Params", Vector) = (1,1,0,1)
         _SlotOffset ("Slot Offset", Float) = 0
         _PosPivot ("Pos Pivot", Vector) = (0,0,0,0)
@@ -26,9 +26,8 @@ Shader "BOSS/VatGlass"
             #pragma multi_compile_instancing
             #pragma target 4.5
             #include "UnityCG.cginc"
-            #include "Lighting.cginc"
 
-            sampler2D _PosVAT, _ScaleVAT, _RotVAT, _PalIdxVAT, _Palette;
+            sampler2D _PosVAT, _ScaleVAT, _RotVAT, _ColorVAT;
             float4 _VatParams;
             float4 _PosPivot, _PosScale;
             float _SlotOffset;
@@ -55,22 +54,20 @@ Shader "BOSS/VatGlass"
                 float4 p = tex2Dlod(_PosVAT, float4(uv,0,0));
                 float4 s = tex2Dlod(_ScaleVAT, float4(uv,0,0));
                 float4 q = tex2Dlod(_RotVAT, float4(uv,0,0));
-                float palIdx = tex2Dlod(_PalIdxVAT, float4(uv,0,0)).r;
+                float4 c = tex2Dlod(_ColorVAT, float4(uv,0,0));
                 if (_GammaDecode > 0.5) {
                     p.xyz = pow(max(p.xyz, 0.0), 2.2);
                     s.xyz = pow(max(s.xyz, 0.0), 2.2);
-                    palIdx = pow(max(palIdx, 0.0), 2.2);
+                    c.xyz = pow(max(c.xyz, 0.0), 2.2);
                 }
                 float alive = p.a;
                 float3 wpos = p.xyz * _PosScale.xyz + _PosPivot.xyz;
                 float3 scl = s.xyz * alive;
                 float3 local = wpos + boss_quat_rotate(q, v.vertex.xyz * scl);
-                o.pos = UnityObjectToClipPos(float4(local,1.0));
+                o.pos = UnityObjectToClipPos(float4(local, 1.0));
                 o.wnormal = UnityObjectToWorldNormal(boss_quat_rotate(q, v.normal));
                 o.viewDir = normalize(_WorldSpaceCameraPos - mul(unity_ObjectToWorld, float4(local,1)).xyz);
-                float side = _VatParams.w;
-                float2 puv = float2((fmod(palIdx, side)+0.5)/side, (floor(palIdx/side)+0.5)/side);
-                o.albedo = tex2Dlod(_Palette, float4(puv,0,0)).rgb;
+                o.albedo = c.rgb;
                 o.alive = alive;
                 return o;
             }
@@ -78,13 +75,11 @@ Shader "BOSS/VatGlass"
             fixed4 frag(v2f i) : SV_Target
             {
                 clip(i.alive - 0.5);
-                // アンリット（焼き込み色）+ fresnel 擬似ガラス。シーンライティング非依存。
                 float3 nrm = normalize(i.wnormal);
                 float3 vd = normalize(i.viewDir);
                 float shade = 0.72 + 0.28 * saturate(dot(nrm, normalize(float3(0.3, 0.9, -0.25))));
                 float fres = pow(1.0 - saturate(dot(nrm, vd)), 3.0);
-                float3 col = i.albedo * shade + fres * 0.35;
-                return fixed4(col, 1.0);
+                return fixed4(i.albedo * shade + fres * 0.35, 1.0);
             }
             ENDCG
         }

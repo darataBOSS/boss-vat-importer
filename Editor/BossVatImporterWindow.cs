@@ -12,7 +12,7 @@ namespace BossVat.EditorTools
         // ---- meta JSON データクラス ----
         [System.Serializable] public class Group { public int material_id; public int slot_start; public int slot_count; public string kind; }
         [System.Serializable] public class Palette { public string file; public int colors; public int side; }
-        [System.Serializable] public class Textures { public string position; public string scale; public string rotation; public string palette_index; }
+        [System.Serializable] public class Textures { public string position; public string scale; public string rotation; public string color; public string palette_index; }
         [System.Serializable] public class Meta
         {
             public int fps; public int frame_count; public int slot_count;
@@ -124,10 +124,14 @@ namespace BossVat.EditorTools
                 string destDir = (_outputFolder.TrimEnd('/') + "/" + baseName);
                 EnsureFolder(destDir);
 
+                // 色 VAT のファイル名（新: color / 旧: palette_index）
+                string colorFile = !string.IsNullOrEmpty(meta.textures.color)
+                    ? meta.textures.color : meta.textures.palette_index;
+
                 // ---- ファイルをコピー ----
                 string[] files = {
                     meta.textures.position, meta.textures.scale, meta.textures.rotation,
-                    meta.textures.palette_index, meta.palette.file, meta.cube_mesh
+                    colorFile, meta.cube_mesh
                 };
                 foreach (var f in files)
                 {
@@ -139,11 +143,10 @@ namespace BossVat.EditorTools
                 File.Copy(metaPath, AbsPath(destDir + "/boss_vat_meta.json"), true);
                 AssetDatabase.Refresh();
 
-                // ---- EXR 取り込み設定 ----
+                // ---- EXR 取り込み設定（4 VAT すべてデータとして）----
                 foreach (var ex in new[] { meta.textures.position, meta.textures.scale,
-                                           meta.textures.rotation, meta.textures.palette_index })
+                                           meta.textures.rotation, colorFile })
                     ConfigureExr(destDir + "/" + ex);
-                ConfigurePalette(destDir + "/" + meta.palette.file);
                 AssetDatabase.Refresh();
 
                 // ---- アセット読み込み ----
@@ -151,12 +154,10 @@ namespace BossVat.EditorTools
                 var posVAT = LoadTex(destDir + "/" + meta.textures.position);
                 var sclVAT = LoadTex(destDir + "/" + meta.textures.scale);
                 var rotVAT = LoadTex(destDir + "/" + meta.textures.rotation);
-                var palIdx = LoadTex(destDir + "/" + meta.textures.palette_index);
-                var palette = LoadTex(destDir + "/" + meta.palette.file);
+                var colorVAT = LoadTex(destDir + "/" + colorFile);
 
                 var pivot = ToVec(meta.position_pivot);
                 var scale = ToVec(meta.position_scale);
-                int side = meta.palette != null ? meta.palette.side : 1;
 
                 Material opaqueMat = null, glassMat = null;
 
@@ -187,16 +188,16 @@ namespace BossVat.EditorTools
                     {
                         if (glassMat == null)
                             glassMat = MakeMaterial(destDir, baseName, "Glass", "BOSS/VatGlass",
-                                posVAT, sclVAT, rotVAT, palIdx, palette, pivot, scale,
-                                meta.slot_count, meta.frame_count, side);
+                                posVAT, sclVAT, rotVAT, colorVAT, pivot, scale,
+                                meta.slot_count, meta.frame_count);
                         mat = glassMat;
                     }
                     else
                     {
                         if (opaqueMat == null)
                             opaqueMat = MakeMaterial(destDir, baseName, "Opaque", "BOSS/VatOpaque",
-                                posVAT, sclVAT, rotVAT, palIdx, palette, pivot, scale,
-                                meta.slot_count, meta.frame_count, side);
+                                posVAT, sclVAT, rotVAT, colorVAT, pivot, scale,
+                                meta.slot_count, meta.frame_count);
                         mat = opaqueMat;
                     }
                     grps.Add(new VatGroup { slotStart = g.slot_start, slotCount = g.slot_count, material = mat });
@@ -221,17 +222,16 @@ namespace BossVat.EditorTools
 
         // ---- helpers ----
         static Material MakeMaterial(string dir, string baseName, string suffix, string shaderName,
-            Texture pos, Texture scl, Texture rot, Texture palIdx, Texture palette,
-            Vector4 pivot, Vector4 scale, int slotCount, int frameCount, int side)
+            Texture pos, Texture scl, Texture rot, Texture color,
+            Vector4 pivot, Vector4 scale, int slotCount, int frameCount)
         {
             var sh = Shader.Find(shaderName);
             if (sh == null) { Debug.LogError("Shader not found: " + shaderName); return null; }
             var m = new Material(sh) { enableInstancing = true };
             m.SetTexture("_PosVAT", pos); m.SetTexture("_ScaleVAT", scl);
-            m.SetTexture("_RotVAT", rot); m.SetTexture("_PalIdxVAT", palIdx);
-            m.SetTexture("_Palette", palette);
+            m.SetTexture("_RotVAT", rot); m.SetTexture("_ColorVAT", color);
             m.SetVector("_PosPivot", pivot); m.SetVector("_PosScale", scale);
-            m.SetVector("_VatParams", new Vector4(slotCount, frameCount, 0.5f / Mathf.Max(1, frameCount), side));
+            m.SetVector("_VatParams", new Vector4(slotCount, frameCount, 0.5f / Mathf.Max(1, frameCount), 1));
             // Gamma カラースペースのプロジェクトでは Unity が EXR を pow(1/2.2) で取り込むため、
             // シェーダー側で逆補正（pow 2.2）する。Linear プロジェクトでは不要。
             m.SetFloat("_GammaDecode", PlayerSettings.colorSpace == ColorSpace.Gamma ? 1f : 0f);
