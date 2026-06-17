@@ -176,7 +176,7 @@ namespace BossVat.EditorTools
                 player.cubeMesh = cubeMesh;
                 player.slotCount = meta.slot_count;
                 player.frameCount = meta.frame_count;
-                player.paletteSide = side;
+                player.paletteSide = 1;   // 色は color VAT から直接読むため未使用
                 player.fps = meta.fps > 0 ? meta.fps : 30;
 
                 var grps = new System.Collections.Generic.List<VatGroup>();

@@ -33,7 +33,7 @@ Shader "BOSS/VatOpaque"
             float _SlotOffset;
             float _GammaDecode;
 
-            struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; uint instanceID : SV_InstanceID; };
             struct v2f
             {
                 float4 pos : SV_POSITION;
@@ -47,8 +47,8 @@ Shader "BOSS/VatOpaque"
 
             v2f vert(appdata v)
             {
-                v2f o; UNITY_SETUP_INSTANCE_ID(v);
-                float slot = _SlotOffset + (float)unity_InstanceID;
+                v2f o;
+                float slot = _SlotOffset + (float)v.instanceID;
                 float2 uv = float2((slot + 0.5) / _VatParams.x, _VatParams.z);
                 float4 p = tex2Dlod(_PosVAT, float4(uv,0,0));
                 float4 s = tex2Dlod(_ScaleVAT, float4(uv,0,0));
