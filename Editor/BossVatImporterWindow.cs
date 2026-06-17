@@ -22,9 +22,34 @@ namespace BossVat.EditorTools
             public Textures textures; public string cube_mesh;
         }
 
+        // ---- 質感スタイル ----
+        public enum VatStyle { Opaque, Frosted, Clear, Emissive }
+
+        static string ShaderForStyle(VatStyle s)
+        {
+            switch (s)
+            {
+                case VatStyle.Frosted:  return "BOSS/VatFrosted";
+                case VatStyle.Clear:    return "BOSS/VatClear";
+                case VatStyle.Emissive: return "BOSS/VatEmissive";
+                default:                return "BOSS/VatOpaque";
+            }
+        }
+
+        static string StyleSuffix(VatStyle s) => s.ToString();
+
+        // Blender の kind（glass / opaque）から初期スタイルを決める。
+        static VatStyle DefaultStyleForKind(string kind)
+            => (kind == "glass") ? VatStyle.Frosted : VatStyle.Opaque;
+
         string _sourceFolder = "";
         string _outputFolder = "Assets/BossVat";
         string _prefabName = "";
+
+        // 質感の編集用にロードした meta とグループ毎のスタイル
+        Meta _loadedMeta;
+        string _loadedFolder = "";
+        VatStyle[] _groupStyles;
 
         [MenuItem("BOSS/VAT Importer")]
         public static void Open()
@@ -72,12 +97,30 @@ namespace BossVat.EditorTools
             }
             _prefabName = EditorGUILayout.TextField("プレファブ名（空なら自動）", _prefabName);
 
+            // ③ マテリアル毎の質感スタイル
+            EditorGUILayout.Space();
+            RefreshMetaIfNeeded();
+            if (_loadedMeta != null && _loadedMeta.groups != null && _loadedMeta.groups.Length > 0)
+            {
+                EditorGUILayout.LabelField("③ マテリアル毎の質感スタイル", EditorStyles.boldLabel);
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    for (int i = 0; i < _loadedMeta.groups.Length; i++)
+                    {
+                        var g = _loadedMeta.groups[i];
+                        string label = "マテリアル " + g.material_id + "（" + g.slot_count + " スロット）";
+                        _groupStyles[i] = (VatStyle)EditorGUILayout.EnumPopup(label, _groupStyles[i]);
+                    }
+                }
+                EditorGUILayout.HelpBox("不透明=ソリッド / 曇りガラス=半透明フロスト / クリアガラス=透明 / 発光=エミッシブ。\nBuilt-in・URP は自動で選択されます。", MessageType.None);
+            }
+
             EditorGUILayout.Space();
             using (new EditorGUI.DisabledScope(!IsReady()))
             {
-                if (GUILayout.Button("③ VAT プレファブを生成", GUILayout.Height(36)))
+                if (GUILayout.Button("④ VAT プレファブを生成", GUILayout.Height(36)))
                 {
-                    var prefab = BuildPrefab(_sourceFolder, _outputFolder, _prefabName);
+                    var prefab = BuildPrefab(_sourceFolder, _outputFolder, _prefabName, _groupStyles);
                     if (prefab != null)
                     {
                         EditorGUIUtility.PingObject(prefab);
@@ -90,7 +133,7 @@ namespace BossVat.EditorTools
             }
             if (!IsReady())
                 EditorGUILayout.HelpBox("boss_vat_meta.json があるフォルダと、Assets 内の出力先を指定してください。", MessageType.Info);
-            EditorGUILayout.HelpBox("生成後、プレファブをシーンに置くだけで再生されます（Built-in パイプライン）。", MessageType.None);
+            EditorGUILayout.HelpBox("生成後、プレファブをシーンに置くだけで再生されます（Built-in / URP 自動対応）。", MessageType.None);
         }
 
         bool IsReady()
@@ -101,8 +144,34 @@ namespace BossVat.EditorTools
                 && _outputFolder.StartsWith("Assets");
         }
 
-        // テスト/自動化からも呼べる静的 API。失敗時は null。
+        // ソースフォルダが変わったら meta を読み直し、グループ毎のスタイル既定値を用意する。
+        void RefreshMetaIfNeeded()
+        {
+            if (string.IsNullOrEmpty(_sourceFolder)) { _loadedMeta = null; _loadedFolder = ""; return; }
+            if (_sourceFolder == _loadedFolder && _loadedMeta != null) return;
+            _loadedFolder = _sourceFolder;
+            _loadedMeta = null; _groupStyles = null;
+            string metaPath = Path.Combine(_sourceFolder, "boss_vat_meta.json");
+            if (!File.Exists(metaPath)) return;
+            try
+            {
+                _loadedMeta = JsonUtility.FromJson<Meta>(File.ReadAllText(metaPath));
+                if (_loadedMeta != null && _loadedMeta.groups != null)
+                {
+                    _groupStyles = new VatStyle[_loadedMeta.groups.Length];
+                    for (int i = 0; i < _loadedMeta.groups.Length; i++)
+                        _groupStyles[i] = DefaultStyleForKind(_loadedMeta.groups[i].kind);
+                }
+            }
+            catch { _loadedMeta = null; }
+        }
+
+        // 互換: スタイル未指定なら kind から既定スタイルを使う。
         public static GameObject BuildPrefab(string sourceFolder, string outputFolder, string prefabName)
+            => BuildPrefab(sourceFolder, outputFolder, prefabName, null);
+
+        // テスト/自動化からも呼べる静的 API。styles はグループ毎の質感（null で kind 既定）。
+        public static GameObject BuildPrefab(string sourceFolder, string outputFolder, string prefabName, VatStyle[] styles)
         {
             try
             {
@@ -123,6 +192,11 @@ namespace BossVat.EditorTools
 
                 string destDir = (_outputFolder.TrimEnd('/') + "/" + baseName);
                 EnsureFolder(destDir);
+
+                // パイプライン（Built-in / URP）を検出し、対応シェーダーを Assets にコピー。
+                // URP のシェーダーは URP 未導入プロジェクトでコンパイルエラーになるため、
+                // パッケージ内では Unity 無視フォルダ（~）に置き、合致する方だけ取り込む。
+                EnsureShaders();
 
                 // 色 VAT のファイル名（新: color / 旧: palette_index）
                 string colorFile = !string.IsNullOrEmpty(meta.textures.color)
@@ -159,8 +233,6 @@ namespace BossVat.EditorTools
                 var pivot = ToVec(meta.position_pivot);
                 var scale = ToVec(meta.position_scale);
 
-                Material opaqueMat = null, glassMat = null;
-
                 // ---- BossVatPlayer 付き GameObject ----
                 var go = new GameObject(baseName + "_VAT");
                 // Blender と同じ大きさになるよう、オブジェクトのワールドスケールを適用
@@ -179,26 +251,21 @@ namespace BossVat.EditorTools
                 player.paletteSide = 1;   // 色は color VAT から直接読むため未使用
                 player.fps = meta.fps > 0 ? meta.fps : 30;
 
+                // 同じスタイルはマテリアルを共有（生成数を抑える）
+                var styleMats = new System.Collections.Generic.Dictionary<VatStyle, Material>();
                 var grps = new System.Collections.Generic.List<VatGroup>();
-                foreach (var g in meta.groups)
+                for (int i = 0; i < meta.groups.Length; i++)
                 {
-                    bool glass = g.kind == "glass";
+                    var g = meta.groups[i];
+                    VatStyle style = (styles != null && i < styles.Length)
+                        ? styles[i] : DefaultStyleForKind(g.kind);
                     Material mat;
-                    if (glass)
+                    if (!styleMats.TryGetValue(style, out mat))
                     {
-                        if (glassMat == null)
-                            glassMat = MakeMaterial(destDir, baseName, "Glass", "BOSS/VatGlass",
-                                posVAT, sclVAT, rotVAT, colorVAT, pivot, scale,
-                                meta.slot_count, meta.frame_count);
-                        mat = glassMat;
-                    }
-                    else
-                    {
-                        if (opaqueMat == null)
-                            opaqueMat = MakeMaterial(destDir, baseName, "Opaque", "BOSS/VatOpaque",
-                                posVAT, sclVAT, rotVAT, colorVAT, pivot, scale,
-                                meta.slot_count, meta.frame_count);
-                        mat = opaqueMat;
+                        mat = MakeMaterial(destDir, baseName, StyleSuffix(style), ShaderForStyle(style),
+                            style, posVAT, sclVAT, rotVAT, colorVAT, pivot, scale,
+                            meta.slot_count, meta.frame_count);
+                        styleMats[style] = mat;
                     }
                     grps.Add(new VatGroup { slotStart = g.slot_start, slotCount = g.slot_count, material = mat });
                 }
@@ -222,7 +289,7 @@ namespace BossVat.EditorTools
 
         // ---- helpers ----
         static Material MakeMaterial(string dir, string baseName, string suffix, string shaderName,
-            Texture pos, Texture scl, Texture rot, Texture color,
+            VatStyle style, Texture pos, Texture scl, Texture rot, Texture color,
             Vector4 pivot, Vector4 scale, int slotCount, int frameCount)
         {
             var sh = Shader.Find(shaderName);
@@ -235,9 +302,66 @@ namespace BossVat.EditorTools
             // Gamma カラースペースのプロジェクトでは Unity が EXR を pow(1/2.2) で取り込むため、
             // シェーダー側で逆補正（pow 2.2）する。Linear プロジェクトでは不要。
             m.SetFloat("_GammaDecode", PlayerSettings.colorSpace == ColorSpace.Gamma ? 1f : 0f);
+            // スタイル既定パラメータ（マテリアルで後から微調整可）
+            switch (style)
+            {
+                case VatStyle.Frosted:
+                    m.SetFloat("_MinShade", 0.78f); m.SetFloat("_Alpha", 0.45f);
+                    m.SetFloat("_Fresnel", 0.9f); m.SetFloat("_FresnelPower", 2.5f);
+                    m.renderQueue = 3000;
+                    break;
+                case VatStyle.Clear:
+                    m.SetFloat("_MinShade", 0.85f); m.SetFloat("_Alpha", 0.12f);
+                    m.SetFloat("_Fresnel", 1.4f); m.SetFloat("_FresnelPower", 3.5f);
+                    m.renderQueue = 3000;
+                    break;
+                case VatStyle.Emissive:
+                    m.SetFloat("_EmissionStrength", 2.2f);
+                    break;
+                default:
+                    m.SetFloat("_MinShade", 0.72f);
+                    break;
+            }
             string path = AssetDatabase.GenerateUniqueAssetPath(dir + "/" + baseName + "_" + suffix + ".mat");
             AssetDatabase.CreateAsset(m, path);
             return m;
+        }
+
+        // 現在のレンダーパイプラインが URP かどうか。
+        static bool IsURPActive()
+        {
+            var rp = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
+            return rp != null && rp.GetType().FullName.Contains("Universal");
+        }
+
+        // パッケージ内の Builtin~ / URP~ から、現在のパイプラインに合うシェーダーを
+        // Assets/BossVatShaders へコピーする（固定の共有フォルダ。名前衝突を避けるため1セットのみ）。
+        static readonly string ShaderDestDir = "Assets/BossVatShaders";
+        static void EnsureShaders()
+        {
+            bool urp = IsURPActive();
+            var pkg = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(BossVatImporterWindow).Assembly);
+            if (pkg == null || string.IsNullOrEmpty(pkg.resolvedPath))
+            {
+                Debug.LogWarning("BOSS VAT: パッケージ情報を取得できませんでした（シェーダーコピーをスキップ）。");
+                return;
+            }
+            string srcDir = Path.Combine(pkg.resolvedPath, "Runtime", urp ? "URP~" : "Builtin~");
+            if (!Directory.Exists(srcDir))
+            {
+                Debug.LogError("BOSS VAT: シェーダーフォルダが見つかりません: " + srcDir);
+                return;
+            }
+            EnsureFolder(ShaderDestDir);
+            foreach (var f in Directory.GetFiles(srcDir))
+            {
+                string ext = Path.GetExtension(f).ToLowerInvariant();
+                if (ext != ".shader" && ext != ".hlsl") continue;
+                // パイプライン切替時に取り残しが出ないよう毎回上書きコピー。
+                File.Copy(f, AbsPath(ShaderDestDir + "/" + Path.GetFileName(f)), true);
+            }
+            AssetDatabase.Refresh();
+            Debug.Log("BOSS VAT: " + (urp ? "URP" : "Built-in") + " 用シェーダーを " + ShaderDestDir + " に配置しました。");
         }
 
         static Texture2D LoadTex(string assetPath) => AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
