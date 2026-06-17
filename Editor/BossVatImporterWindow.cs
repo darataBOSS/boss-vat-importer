@@ -256,10 +256,14 @@ namespace BossVat.EditorTools
             ti.wrapMode = TextureWrapMode.Clamp;
             ti.npotScale = TextureImporterNPOTScale.None;
             ti.textureCompression = TextureImporterCompression.Uncompressed;
-            ti.maxTextureSize = 8192;
+            // VAT 幅 = slot_count（最大 16384）。8192 だと 15000 等のスロットが
+            // 縮小され全データがずれる（Blender と見た目が変わる）。物理上限まで上げる。
+            ti.maxTextureSize = 16384;
             var ps = ti.GetDefaultPlatformTextureSettings();
             ps.format = TextureImporterFormat.RGBAFloat;
             ps.textureCompression = TextureImporterCompression.Uncompressed;
+            ps.maxTextureSize = 16384;
+            ps.overridden = true;
             ti.SetPlatformTextureSettings(ps);
             ti.SaveAndReimport();
         }
