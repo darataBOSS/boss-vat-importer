@@ -245,6 +245,11 @@ namespace BossVat.EditorTools
                     objScale = ParseScaleFromMatrix(File.ReadAllText(metaPath));  // 古い VAT 互換
                 if (objScale.x != 0 && objScale.y != 0 && objScale.z != 0)
                     go.transform.localScale = objScale;
+                // 軸整列ボクセルを「真正面（グリッド軸ぴったり）」から見ると、列の隙間が
+                // 一直線に見通せて縦縞に見える（Blender はグリッドが傾いて見えるため出ない）。
+                // 既定で少しヨー回転させ、奥行きのレイヤーで隙間が埋まるようにする。
+                // ※真正面で見たいときはシーンで回転を 0 に戻せる（その場合は縞が出る）。
+                go.transform.localRotation = Quaternion.Euler(0f, 20f, 0f);
                 var player = go.AddComponent<BossVatPlayer>();
                 player.cubeMesh = cubeMesh;
                 player.slotCount = meta.slot_count;
