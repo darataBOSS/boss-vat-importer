@@ -38,9 +38,10 @@ namespace BossVat.EditorTools
 
         static string StyleSuffix(VatStyle s) => s.ToString();
 
-        // Blender の kind（glass / opaque）から初期スタイルを決める。
+        // 既定は常に「不透明」。ガラス系(Frosted/Clear)は正面の平らな面が透けて
+        // 縦縞に見えるため、ユーザーが Importer で明示的に選んだときだけ使う。
         static VatStyle DefaultStyleForKind(string kind)
-            => (kind == "glass") ? VatStyle.Frosted : VatStyle.Opaque;
+            => VatStyle.Opaque;
 
         string _sourceFolder = "";
         string _outputFolder = "Assets/BossVat";
